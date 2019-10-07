@@ -19,8 +19,12 @@ import sys
 import matplotlib.pyplot as plt
 import numpy
 import math
+import yaml
+
 
 markers = ['s', 'h', '^', '*', 'o', 'p', '+', 'x', '<', 'D', '>', 'v', 'd', 0, 5, 2, 7, 1, 4, 3, 6, '1', '2', '3', '4', '8']
+
+
 
 def vm_only(workload):
 	# TODO
@@ -47,15 +51,20 @@ def get_workload(workload_type):
 	return workload
 
 def main():
-	if len(sys.argv) <= 1:
-		print "USAGE: python analysis.py <workload>"
+	if len(sys.argv) <= 2:
+		print "USAGE: python analysis.py <config.yml> <workload>"
 		print "<workload>: w1,w2,w3,w4,w5,w6,w7,wAll"
 		return
-	workload_type = sys.argv[1]
-	
-	num_vms, vm_cost = vm_only(workload)
-	sc_load, sc_cost = sc_only(workload)
-	num_vms, sc_load, vm_cost, sc_cost = vm_sc(workload)
+	config_file = sys.argv[1]
+	workload_type = sys.argv[2]
+
+	with open(config_file, 'r') as ymlfile:
+		cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
+	print cfg['vm']['mu']
+
+	num_vms, vm_cost = vm_only(workload_type)
+	sc_load, sc_cost = sc_only(workload_type)
+	num_vms, sc_load, vm_cost, sc_cost = vm_sc(workload_type)
 
 	# TODO: plot the above data
 
