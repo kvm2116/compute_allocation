@@ -25,21 +25,38 @@ import yaml
 markers = ['s', 'h', '^', '*', 'o', 'p', '+', 'x', '<', 'D', '>', 'v', 'd', 0, 5, 2, 7, 1, 4, 3, 6, '1', '2', '3', '4', '8']
 
 
-
-def vm_only(workload):
+# Greedy method to calculate the number of VMs
+def vm_only(totalload, cfg):
 	# TODO
-	num_vms = [] # number of VMs initiated at each time stamp
+	workload = [load for load in totalload]
+	num_vms = [0 for load in workload] # number of VMs initiated at each time stamp
 	vm_cost = 0
+	window = cfg['vm']['window']
+	mu_v = cfg['vm']['mu_v']
+	alpha_v = cfg['vm']['alpha_v']
+	
+	while sum(workload) != 0:
+		window_sums = [(sum(workload[i:i+window]),i) for i in range(len(workload)-window+1)]
+		index = max(window_sums,key=lambda item:item[0])[1]
+		minLoad = float("inf")
+		for i in range(index, index+window):
+			minLoad = min(minLoad, workload[i]) if workload[i] != 0 else minLoad
+		provision_vms = math.ceil(minLoad/mu_v)
+		num_vms[index] += provision_vms
+		for i in range(index, index+window):
+			workload[i] = max(0,workload[i]-(provision_vms*mu_v))
+	vm_cost = sum(num_vms) * alpha_v
 	return num_vms, vm_cost
 
-def sc_only(workload):
+def sc_only(totalload, cfg):
+	workload = [load for load in totalload]
 	sc_load = workload # load on SC at each time stamp
-	# TODO
-	sc_cost = 0
+	sc_cost = cfg['sc']['alpha_s'] * (sum(workload) / cfg['sc']['mu_s'])
 	return sc_load, sc_cost
 
-def vm_sc(workload):
+def vm_sc(totalload, cfg):
 	# TODO
+	workload = [load for load in totalload]
 	num_vms = [] # number of VMs initiated at each time stamp
 	sc_load = [] # load on SC at each time stamp
 	vm_cost = 0
@@ -48,6 +65,10 @@ def vm_sc(workload):
 
 def get_workload(workload_type):
 	workload = [] # load for each timestamp
+	if workload_type == 'w1':	# Facebook Hadoop
+		workload = []
+	if workload_type == 'test':	# Facebook Hadoop
+		workload = [1,2,0,1]
 	return workload
 
 def main():
@@ -58,15 +79,47 @@ def main():
 	config_file = sys.argv[1]
 	workload_type = sys.argv[2]
 
+	totalload = get_workload(workload_type)
 	with open(config_file, 'r') as ymlfile:
 		cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
-	print cfg['vm']['mu']
-
-	num_vms, vm_cost = vm_only(workload_type)
-	sc_load, sc_cost = sc_only(workload_type)
-	num_vms, sc_load, vm_cost, sc_cost = vm_sc(workload_type)
-
+	# print totalload
+	num_vms, vm_cost = vm_only(totalload, cfg)
+	# print totalload
+	sc_load, sc_cost = sc_only(totalload, cfg)
+	# print totalload
+	num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, sc_cost_hybrid = vm_sc(totalload, cfg)
+	# print totalload
 	# TODO: plot the above data
+	results = "********** COST (Workload: %s) *********  SC only: %f\t VM only: %f\t VM+SC: %f" % (workload_type, sc_cost, vm_cost, vm_cost_hybrid+sc_cost_hybrid)
+	print results
+	filename = './graphs/' + workload_type + '.png'
+	fig = plt.figure()
+	# legends = []
+	# for cp_ratio in cp_ratios:
+	# 	key = r'$\alpha_{s\_cp}$=' + str(cp_ratio) + r'$\alpha_{v\_cp}$'
+	# 	legends.append(key)
+	plt.subplot(2,1,1)
+	# print num_vms
+	# print [i for i in range(len(totalload))]
+	plt.plot([i for i in range(len(totalload))], num_vms, 'c*', markersize=7)
+	# plt.plot(price_ratios[::20], , 'ro', markersize=7)
+	# plt.plot(price_ratios[::20], results[2][::20], 'g^', markersize=7)
+	# plt.plot(price_ratios[::200], results[3][::200], 'bs', markersize=7)
+	# plt.plot(price_ratios, results[0], 'c', linewidth='2')
+	# plt.plot(price_ratios, results[1], 'r', linewidth='2')
+	# plt.plot(price_ratios, results[2], 'g', linewidth='2')
+	# plt.plot(price_ratios, results[3], 'b', linewidth='2')
+
+	# plt.legend(legends, loc='upper right', fontsize=21)
+	plt.ylabel('Number of VMs', fontsize=25)
+	# plt.ylabel('Revenue from User', fontsize=25)
+	plt.subplot(2,1,2)
+	plt.plot([i for i in range(len(totalload))], sc_load, 'ro', markersize=7)
+	plt.ylabel('SC Load', fontsize=25)
+
+
+	plt.xlabel('Time', fontsize=25)
+	plt.savefig(filename)
 
 if __name__ == '__main__':
 	main()

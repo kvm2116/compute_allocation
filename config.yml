@@ -1,9 +1,9 @@
 vm:
-    mu: 1
+    mu_v: 1
     window: 3
     alpha_v: 1
 sc:
-    mu: 2
+    mu_s: 2
     alpha_s: 2
 other:
     preprocessing_queue:
