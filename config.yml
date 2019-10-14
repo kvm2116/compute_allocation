@@ -13,7 +13,11 @@ zipf:
       - 2.5
       - 3
     max_lambda: 50
-    samples_to_generate: 1100
+    samples_to_generate: 1050
+    samples_to_use: 1000
+uniform:
+    min_lambda: 1
+    max_lambda: 50
     samples_to_use: 1000
 other:
     preprocessing_queue:

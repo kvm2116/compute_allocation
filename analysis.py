@@ -68,9 +68,9 @@ def get_workload(workload_type, cfg):
 	workload = [] # load for each timestamp
 	if workload_type == 'w1':	# Facebook Hadoop
 		workload = []
-	if workload_type == 'test':	# Facebook Hadoop
+	elif workload_type == 'test':	# Facebook Hadoop
 		workload = [1,2,0,1]
-	if workload_type == 'zipf':	# Zipf distribution, parameters specified in config.yml
+	elif workload_type == 'zipf':	# Zipf distribution, parameters specified in config.yml
 		multiple_workloads = [np.random.zipf(zipf_alpha, cfg['zipf']['samples_to_generate']) for zipf_alpha in cfg['zipf']['zipf_alphas']]
 		workload = multiple_workloads[2]
 		workload = workload[workload<cfg['zipf']['max_lambda']][:cfg['zipf']['samples_to_use']]
@@ -80,12 +80,14 @@ def get_workload(workload_type, cfg):
 		# y = x**(-zipf_alpha) / special.zetac(zipf_alpha)
 		# plt.plot(x, y/max(y), linewidth=2, color='r')
 		# plt.show()
+	elif workload_type == 'uniform':	# uniform distribution, parameters specified in config.yml
+		workload = np.random.random_integers(cfg['uniform']['min_lambda'],cfg['uniform']['max_lambda'],cfg['uniform']['samples_to_use'])
 	return workload
 
 def main():
 	if len(sys.argv) <= 2:
 		print "USAGE: python analysis.py <config.yml> <workload>"
-		print "<workload>: w1,w2,w3,w4,w5,w6,w7,wAll,zipf"
+		print "<workload>: w1,w2,w3,w4,w5,w6,w7,wAll,zipf,uniform"
 		return
 	config_file = sys.argv[1]
 	workload_type = sys.argv[2]
