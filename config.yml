@@ -5,6 +5,16 @@ vm:
 sc:
     mu_s: 2
     alpha_s: 2
+zipf:
+    zipf_alphas:
+      - 1.1
+      - 1.5
+      - 2
+      - 2.5
+      - 3
+    max_lambda: 50
+    samples_to_generate: 1100
+    samples_to_use: 1000
 other:
     preprocessing_queue:
         - preprocessing.scale_and_center

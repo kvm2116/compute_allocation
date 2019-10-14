@@ -20,7 +20,8 @@ import matplotlib.pyplot as plt
 import numpy
 import math
 import yaml
-
+import numpy as np
+from scipy import special
 
 markers = ['s', 'h', '^', '*', 'o', 'p', '+', 'x', '<', 'D', '>', 'v', 'd', 0, 5, 2, 7, 1, 4, 3, 6, '1', '2', '3', '4', '8']
 
@@ -63,25 +64,35 @@ def vm_sc(totalload, cfg):
 	sc_cost = 0
 	return num_vms, sc_load, vm_cost, sc_cost
 
-def get_workload(workload_type):
+def get_workload(workload_type, cfg):
 	workload = [] # load for each timestamp
 	if workload_type == 'w1':	# Facebook Hadoop
 		workload = []
 	if workload_type == 'test':	# Facebook Hadoop
 		workload = [1,2,0,1]
+	if workload_type == 'zipf':	# Zipf distribution, parameters specified in config.yml
+		multiple_workloads = [np.random.zipf(zipf_alpha, cfg['zipf']['samples_to_generate']) for zipf_alpha in cfg['zipf']['zipf_alphas']]
+		workload = multiple_workloads[2]
+		workload = workload[workload<cfg['zipf']['max_lambda']][:cfg['zipf']['samples_to_use']]
+		# print len(workload)
+		# count, bins, ignored = plt.hist(workload[workload<50], 50, normed=True)
+		# x = np.arange(1., 50.)
+		# y = x**(-zipf_alpha) / special.zetac(zipf_alpha)
+		# plt.plot(x, y/max(y), linewidth=2, color='r')
+		# plt.show()
 	return workload
 
 def main():
 	if len(sys.argv) <= 2:
 		print "USAGE: python analysis.py <config.yml> <workload>"
-		print "<workload>: w1,w2,w3,w4,w5,w6,w7,wAll"
+		print "<workload>: w1,w2,w3,w4,w5,w6,w7,wAll,zipf"
 		return
 	config_file = sys.argv[1]
 	workload_type = sys.argv[2]
-
-	totalload = get_workload(workload_type)
 	with open(config_file, 'r') as ymlfile:
 		cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
+
+	totalload = get_workload(workload_type, cfg)
 	# print totalload
 	num_vms, vm_cost = vm_only(totalload, cfg)
 	# print totalload
