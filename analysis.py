@@ -25,10 +25,16 @@ from scipy import special
 
 markers = ['s', 'h', '^', '*', 'o', 'p', '+', 'x', '<', 'D', '>', 'v', 'd', 0, 5, 2, 7, 1, 4, 3, 6, '1', '2', '3', '4', '8']
 
+def plot_zipf_workload(workload, zipf_alpha):
+	print len(workload)
+	count, bins, ignored = plt.hist(workload[workload<50], 50, normed=True)
+	x = np.arange(1., 50.)
+	y = x**(-zipf_alpha) / special.zetac(zipf_alpha)
+	plt.plot(x, y/max(y), linewidth=2, color='r')
+	plt.show()
 
 # Greedy method to calculate the number of VMs
 def vm_only(totalload, cfg):
-	# TODO
 	workload = [load for load in totalload]
 	num_vms = [0 for load in workload] # number of VMs initiated at each time stamp
 	vm_cost = 0
@@ -42,7 +48,7 @@ def vm_only(totalload, cfg):
 		minLoad = float("inf")
 		for i in range(index, index+window):
 			minLoad = min(minLoad, workload[i]) if workload[i] != 0 else minLoad
-		provision_vms = math.ceil(minLoad/mu_v)
+		provision_vms = math.ceil(float(minLoad)/mu_v)
 		num_vms[index] += provision_vms
 		for i in range(index, index+window):
 			workload[i] = max(0,workload[i]-(provision_vms*mu_v))
@@ -55,16 +61,76 @@ def sc_only(totalload, cfg):
 	sc_cost = cfg['sc']['alpha_s'] * (sum(workload) / cfg['sc']['mu_s'])
 	return sc_load, sc_cost
 
+
+
 def vm_sc(totalload, cfg):
 	# TODO
 	workload = [load for load in totalload]
-	num_vms = [] # number of VMs initiated at each time stamp
-	sc_load = [] # load on SC at each time stamp
+	num_vms = [0 for load in workload] # number of VMs initiated at each time stamp
+	sc_load = [0 for load in workload] # load on SC at each time stamp
 	vm_cost = 0
 	sc_cost = 0
-	return num_vms, sc_load, vm_cost, sc_cost
+	window = cfg['vm']['window']
+	mu_v = cfg['vm']['mu_v']
+	alpha_v = cfg['vm']['alpha_v']
+	alpha_s = cfg['sc']['alpha_s']
+	mu_s = cfg['sc']['mu_s']
+
+	# Apply the Lemma first
+	i = 0
+	while i < len(workload) - window + 1:
+		if all(workload[j] >= mu_v for j in range(i, i+window)):
+			num_vms[i] += 1
+			for j in range(i, i+window):
+				workload[j] -= mu_v
+		else:
+			i += 1
+	# Apply DP
+	memo = {} 
+
+	def serialize(load):
+		return "_".join(str(l) for l in load)		
+
+	def deserialize(load_string):
+		return load_string.split("_")
+
+	def dp(t, load):
+		print memo
+		load_string = serialize(load)
+		if (t,load_string) in memo:
+			return memo[(t,load_string)]
+
+		vm_possible = int(math.ceil(float(load[t])/mu_v))
+		total_cost = []
+		if t == len(load) - 1:
+			for num_vm in range(0, vm_possible + 1):
+				total_cost.append((alpha_v * num_vm) + (alpha_s * max(0, load[t] - (num_vm * mu_v)) / float(mu_s)))
+		else:
+			for num_vm in range(0, vm_possible + 1):
+				cost_t = (alpha_v * num_vm) + (alpha_s * max(0, load[t] - (num_vm * mu_v)) / float(mu_s))
+				new_load = [l for l in load]
+				print len(new_load), len(load)
+				for i in range(t, t+window):
+					if i >= len(new_load):
+						break
+					new_load[i] = max(0, load[i] - (num_vm * mu_v))
+				cost_t_plus_1, _ = dp(t+1, new_load)
+				total_cost.append(cost_t + cost_t_plus_1)
+
+		memo[(t,load_string)] = min(total_cost)
+		return min(total_cost), total_cost.index(min(total_cost))
+			# 	memo[(t, num_vm, load)] = (alpha_v * num_vm) + (alpha_s * max(0, load[t] - (num_vm * mu_v)) / mu_s)
+			# min_cost, optimal_num_vm =  min([(memo[(t,i,load)],i) for i in range(0, vm_possible+1)])
+			# return min_cost, optimal_num_vm
+	
+	min_cost, _ = dp(0, workload)
+	# add number of VMs from Lemma
+	min_cost += alpha_v * sum(num_vms)
+	return num_vms, sc_load, min_cost, sc_cost # DO NOT USE THIS
+	# return num_vms, sc_load, vm_cost, sc_cost
 
 def get_workload(workload_type, cfg):
+	# TODO
 	workload = [] # load for each timestamp
 	if workload_type == 'w1':	# Facebook Hadoop
 		workload = []
@@ -74,14 +140,9 @@ def get_workload(workload_type, cfg):
 		multiple_workloads = [np.random.zipf(zipf_alpha, cfg['zipf']['samples_to_generate']) for zipf_alpha in cfg['zipf']['zipf_alphas']]
 		workload = multiple_workloads[2]
 		workload = workload[workload<cfg['zipf']['max_lambda']][:cfg['zipf']['samples_to_use']]
-		# print len(workload)
-		# count, bins, ignored = plt.hist(workload[workload<50], 50, normed=True)
-		# x = np.arange(1., 50.)
-		# y = x**(-zipf_alpha) / special.zetac(zipf_alpha)
-		# plt.plot(x, y/max(y), linewidth=2, color='r')
-		# plt.show()
 	elif workload_type == 'uniform':	# uniform distribution, parameters specified in config.yml
 		workload = np.random.random_integers(cfg['uniform']['min_lambda'],cfg['uniform']['max_lambda'],cfg['uniform']['samples_to_use'])
+		# workload = [3,4,1,3,3] # Give different result for VM only and VM+SC
 	return workload
 
 def main():
@@ -101,8 +162,9 @@ def main():
 	sc_load, sc_cost = sc_only(totalload, cfg)
 	# print totalload
 	num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, sc_cost_hybrid = vm_sc(totalload, cfg)
-	# print totalload
+	print totalload
 	# TODO: plot the above data
+
 	results = "********** COST (Workload: %s) *********  SC only: %f\t VM only: %f\t VM+SC: %f" % (workload_type, sc_cost, vm_cost, vm_cost_hybrid+sc_cost_hybrid)
 	print results
 	filename = './graphs/' + workload_type + '.png'

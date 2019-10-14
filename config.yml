@@ -17,8 +17,8 @@ zipf:
     samples_to_use: 1000
 uniform:
     min_lambda: 1
-    max_lambda: 50
-    samples_to_use: 1000
+    max_lambda: 5
+    samples_to_use: 5
 other:
     preprocessing_queue:
         - preprocessing.scale_and_center
