@@ -12,13 +12,15 @@ zipf:
       - 2
       - 2.5
       - 3
-    max_lambda: 50
-    samples_to_generate: 1050
-    samples_to_use: 1000
+    max_job_size: 50
+    jobs_to_generate: 3600
+    job_sizes_to_generate: 4000
+    val_lambda: 2
+    num_intervals: 60
 uniform:
-    min_lambda: 1
-    max_lambda: 5
-    samples_to_use: 5
+    min_job_size: 1
+    max_job_size: 5
+    jobs_to_generate: 3600
 other:
     preprocessing_queue:
         - preprocessing.scale_and_center

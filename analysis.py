@@ -5,8 +5,8 @@ VM : M/G/1 model
 SC: M/G/infinity model
 Plots: VM only, SC only, VM + SC
 
-Usage: python analysis.py <workload>
-<workload>: w1,w2,w3,w4,w5,w6,w7,wAll
+Usage: python analysis.py <config.yml> <workload>
+<workload>: w1,w2,w3,w4,w5,w6,w7,wAll,zipf, uniform
 
 Author: Kunal Mahajan
 PhD student
@@ -22,6 +22,9 @@ import math
 import yaml
 import numpy as np
 from scipy import special
+import random
+
+sys.setrecursionlimit(1500)
 
 markers = ['s', 'h', '^', '*', 'o', 'p', '+', 'x', '<', 'D', '>', 'v', 'd', 0, 5, 2, 7, 1, 4, 3, 6, '1', '2', '3', '4', '8']
 
@@ -95,7 +98,7 @@ def vm_sc(totalload, cfg):
 		return load_string.split("_")
 
 	def dp(t, load):
-		print memo
+		# print memo
 		load_string = serialize(load)
 		if (t,load_string) in memo:
 			return memo[(t,load_string)]
@@ -109,7 +112,7 @@ def vm_sc(totalload, cfg):
 			for num_vm in range(0, vm_possible + 1):
 				cost_t = (alpha_v * num_vm) + (alpha_s * max(0, load[t] - (num_vm * mu_v)) / float(mu_s))
 				new_load = [l for l in load]
-				print len(new_load), len(load)
+				# print len(new_load), len(load)
 				for i in range(t, t+window):
 					if i >= len(new_load):
 						break
@@ -129,6 +132,69 @@ def vm_sc(totalload, cfg):
 	return num_vms, sc_load, min_cost, sc_cost # DO NOT USE THIS
 	# return num_vms, sc_load, vm_cost, sc_cost
 
+#################################################    WORKLOAD GENERATOR     #################################################
+
+"""
+Generate job arrival times specified by Poisson process with a given lambda
+If isTrace == True, merge job arrivals. Else generate job arrivals and then merge
+"""
+def gen_arrivals(isTrace, val_lambda, num_arrivals, num_intervals):
+	
+	arrival_times = []
+	arrivals = [0 for i in range(num_intervals)]
+	time = 0
+
+	# Generate arrival times
+	if not isTrace:
+		for i in range(num_arrivals):
+			p = random.random()			#Get the next probability value from Uniform(0,1)
+			inter_arrival_time = -math.log(1.0 - p)/val_lambda		#Plug it into the inverse of the CDF of Exponential(_lambda)
+			time += inter_arrival_time		#Add the inter-arrival time to the running sum
+			arrival_times.append(time)
+	else:
+		# TODO TRACE DRIVEN
+		arrival_times = []
+
+	# Merge the arrivals into intervals
+	interval_length = num_arrivals/num_intervals
+	print interval_length
+	error = 0
+	for time in arrival_times:
+		if int(time/interval_length) >= len(arrivals):
+			error += 1
+			continue
+		arrivals[int(time/interval_length)] += 1
+	print "jobs generated but not used = %d" % error
+	return arrivals
+
+"""
+compute the actual demand for each time interval
+"""
+def gen_load_per_time(arrivals, job_sizes):
+	if len(job_sizes) < sum(arrivals):
+			print "Error: number of job_sizes is less than number of jobs"
+			return
+	load = [0 for val in arrivals]
+	curr = 0
+	for i in range(len(arrivals)):
+		for size in job_sizes[curr:curr+arrivals[i]]:
+			j = i
+			while j < i+size:
+				# if j >= len(load):
+				# 	load.append(1)
+				# else:
+				# 	load[j] += 1		# Each job uses capacity of 1 in each time interval
+				if j < len(load):
+					load[j] += 1		# Each job uses capacity of 1 in each time interval
+				j += 1
+		curr += arrivals[i]
+	return load
+
+"""
+Workload Generator based on workload type
+For simulated workloads, job arrival times specified by Poisson process
+For trace-driven workloads, job arrival times are from the trace
+"""
 def get_workload(workload_type, cfg):
 	# TODO
 	workload = [] # load for each timestamp
@@ -137,11 +203,15 @@ def get_workload(workload_type, cfg):
 	elif workload_type == 'test':	# Facebook Hadoop
 		workload = [1,2,0,1]
 	elif workload_type == 'zipf':	# Zipf distribution, parameters specified in config.yml
-		multiple_workloads = [np.random.zipf(zipf_alpha, cfg['zipf']['samples_to_generate']) for zipf_alpha in cfg['zipf']['zipf_alphas']]
-		workload = multiple_workloads[2]
-		workload = workload[workload<cfg['zipf']['max_lambda']][:cfg['zipf']['samples_to_use']]
+
+		arrivals = gen_arrivals(False, cfg['zipf']['val_lambda'], cfg['zipf']['jobs_to_generate'], cfg['zipf']['num_intervals'])
+		multiple_workloads = [np.random.zipf(zipf_alpha, cfg['zipf']['job_sizes_to_generate']) for zipf_alpha in cfg['zipf']['zipf_alphas']]
+		job_sizes = multiple_workloads[2]
+		job_sizes = job_sizes[job_sizes<cfg['zipf']['max_job_size']][:cfg['zipf']['jobs_to_generate']]
+		workload = gen_load_per_time(arrivals, job_sizes)
+		print len(arrivals), len(job_sizes), len(workload)
 	elif workload_type == 'uniform':	# uniform distribution, parameters specified in config.yml
-		workload = np.random.random_integers(cfg['uniform']['min_lambda'],cfg['uniform']['max_lambda'],cfg['uniform']['samples_to_use'])
+		job_sizes = np.random.random_integers(cfg['uniform']['min_job_size'],cfg['uniform']['max_job_size'],cfg['uniform']['jobs_to_generate'])
 		# workload = [3,4,1,3,3] # Give different result for VM only and VM+SC
 	return workload
 
@@ -155,14 +225,19 @@ def main():
 	with open(config_file, 'r') as ymlfile:
 		cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
 
+	print "%s workload: generating" % workload_type
 	totalload = get_workload(workload_type, cfg)
-	# print totalload
+	print "%s workload: generated" % workload_type
+	print totalload
+	print "Executing VM only case"
 	num_vms, vm_cost = vm_only(totalload, cfg)
 	# print totalload
+	print "Executing SC only case"
 	sc_load, sc_cost = sc_only(totalload, cfg)
 	# print totalload
+	print "Executing VM+SC case"
 	num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, sc_cost_hybrid = vm_sc(totalload, cfg)
-	print totalload
+	print "Plotting results"
 	# TODO: plot the above data
 
 	results = "********** COST (Workload: %s) *********  SC only: %f\t VM only: %f\t VM+SC: %f" % (workload_type, sc_cost, vm_cost, vm_cost_hybrid+sc_cost_hybrid)
