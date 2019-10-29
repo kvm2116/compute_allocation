@@ -29,7 +29,7 @@ sys.setrecursionlimit(1500)
 markers = ['s', 'h', '^', '*', 'o', 'p', '+', 'x', '<', 'D', '>', 'v', 'd', 0, 5, 2, 7, 1, 4, 3, 6, '1', '2', '3', '4', '8']
 
 def plot_zipf_workload(workload, zipf_alpha):
-	print len(workload)
+	# print len(workload)
 	count, bins, ignored = plt.hist(workload[workload<50], 50, normed=True)
 	x = np.arange(1., 50.)
 	y = x**(-zipf_alpha) / special.zetac(zipf_alpha)
@@ -66,7 +66,7 @@ def sc_only(totalload, cfg):
 
 
 
-def vm_sc(totalload, cfg):
+def vm_sc_offline(totalload, cfg):
 	# TODO
 	workload = [load for load in totalload]
 	num_vms = [0 for load in workload] # number of VMs initiated at each time stamp
@@ -99,10 +99,13 @@ def vm_sc(totalload, cfg):
 
 	def dp(t, load):
 		# print memo
+
 		load_string = serialize(load)
 		if (t,load_string) in memo:
 			return memo[(t,load_string)]
-
+		elif sum(load) == 0:
+			memo[(t,load_string)] = 0
+			return 0,0
 		vm_possible = int(math.ceil(float(load[t])/mu_v))
 		total_cost = []
 		if t == len(load) - 1:
@@ -132,6 +135,12 @@ def vm_sc(totalload, cfg):
 	return num_vms, sc_load, min_cost, sc_cost # DO NOT USE THIS
 	# return num_vms, sc_load, vm_cost, sc_cost
 
+def vm_sc_online(totalload, cfg):
+	# TODO
+	return 0,0,0,0
+
+
+
 #################################################    WORKLOAD GENERATOR     #################################################
 
 """
@@ -157,7 +166,7 @@ def gen_arrivals(isTrace, val_lambda, num_arrivals, num_intervals):
 
 	# Merge the arrivals into intervals
 	interval_length = num_arrivals/num_intervals
-	print interval_length
+	# print interval_length
 	error = 0
 	for time in arrival_times:
 		if int(time/interval_length) >= len(arrivals):
@@ -165,10 +174,12 @@ def gen_arrivals(isTrace, val_lambda, num_arrivals, num_intervals):
 			continue
 		arrivals[int(time/interval_length)] += 1
 	print "jobs generated but not used = %d" % error
+	# print arrivals
 	return arrivals
 
 """
 compute the actual demand for each time interval
+rtype: Offline load, list of online loads
 """
 def gen_load_per_time(arrivals, job_sizes):
 	if len(job_sizes) < sum(arrivals):
@@ -176,19 +187,18 @@ def gen_load_per_time(arrivals, job_sizes):
 			return
 	load = [0 for val in arrivals]
 	curr = 0
+	online_load = []
 	for i in range(len(arrivals)):
+		curr_load = [0 for val in arrivals]
 		for size in job_sizes[curr:curr+arrivals[i]]:
 			j = i
-			while j < i+size:
-				# if j >= len(load):
-				# 	load.append(1)
-				# else:
-				# 	load[j] += 1		# Each job uses capacity of 1 in each time interval
-				if j < len(load):
-					load[j] += 1		# Each job uses capacity of 1 in each time interval
+			while j < i+size and j < len(load):
+				load[j] += 1		# Each job uses capacity of 1 in each time interval
+				curr_load[j-i] += 1
 				j += 1
 		curr += arrivals[i]
-	return load
+		online_load.append(curr_load[:len(arrivals)-i])
+	return load, online_load
 
 """
 Workload Generator based on workload type
@@ -197,23 +207,23 @@ For trace-driven workloads, job arrival times are from the trace
 """
 def get_workload(workload_type, cfg):
 	# TODO
-	workload = [] # load for each timestamp
+	offline_workload = [] # load for each timestamp
 	if workload_type == 'w1':	# Facebook Hadoop
-		workload = []
+		offline_workload = []
 	elif workload_type == 'test':	# Facebook Hadoop
-		workload = [1,2,0,1]
+		offline_workload = [1,2,0,1]
 	elif workload_type == 'zipf':	# Zipf distribution, parameters specified in config.yml
 
 		arrivals = gen_arrivals(False, cfg['zipf']['val_lambda'], cfg['zipf']['jobs_to_generate'], cfg['zipf']['num_intervals'])
 		multiple_workloads = [np.random.zipf(zipf_alpha, cfg['zipf']['job_sizes_to_generate']) for zipf_alpha in cfg['zipf']['zipf_alphas']]
 		job_sizes = multiple_workloads[2]
 		job_sizes = job_sizes[job_sizes<cfg['zipf']['max_job_size']][:cfg['zipf']['jobs_to_generate']]
-		workload = gen_load_per_time(arrivals, job_sizes)
-		print len(arrivals), len(job_sizes), len(workload)
+		offline_workload, online_workload = gen_load_per_time(arrivals, job_sizes)
+		# print len(arrivals), len(job_sizes), len(offline_workload), len(online_workload)
 	elif workload_type == 'uniform':	# uniform distribution, parameters specified in config.yml
 		job_sizes = np.random.random_integers(cfg['uniform']['min_job_size'],cfg['uniform']['max_job_size'],cfg['uniform']['jobs_to_generate'])
 		# workload = [3,4,1,3,3] # Give different result for VM only and VM+SC
-	return workload
+	return offline_workload, online_workload
 
 def main():
 	if len(sys.argv) <= 2:
@@ -226,21 +236,24 @@ def main():
 		cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
 
 	print "%s workload: generating" % workload_type
-	totalload = get_workload(workload_type, cfg)
+	totalload_offline, totalload_online = get_workload(workload_type, cfg)
 	print "%s workload: generated" % workload_type
-	print totalload
+	# print totalload_offline
+	# print totalload_online
 	print "Executing VM only case"
-	num_vms, vm_cost = vm_only(totalload, cfg)
+	num_vms, vm_cost = vm_only(totalload_offline, cfg)
 	# print totalload
 	print "Executing SC only case"
-	sc_load, sc_cost = sc_only(totalload, cfg)
+	sc_load, sc_cost = sc_only(totalload_offline, cfg)
 	# print totalload
-	print "Executing VM+SC case"
-	num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, sc_cost_hybrid = vm_sc(totalload, cfg)
+	print "Executing VM+SC (offline) case"
+	num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, sc_cost_hybrid = vm_sc_offline(totalload_offline, cfg)
+	print "Executing VM+SC (online) case"
+	on_num_vms_hybrid, on_sc_load_hybrid, on_vm_cost_hybrid, on_sc_cost_hybrid = vm_sc_online(totalload_offline, cfg)
 	print "Plotting results"
 	# TODO: plot the above data
 
-	results = "********** COST (Workload: %s) *********  SC only: %f\t VM only: %f\t VM+SC: %f" % (workload_type, sc_cost, vm_cost, vm_cost_hybrid+sc_cost_hybrid)
+	results = "********** COST (Workload: %s) *********  SC only: %f\t VM only: %f\t VM+SC (offline): %f\t VM+SC (online): %f" % (workload_type, sc_cost, vm_cost, vm_cost_hybrid+sc_cost_hybrid, on_vm_cost_hybrid+on_sc_cost_hybrid)
 	print results
 	filename = './graphs/' + workload_type + '.png'
 	fig = plt.figure()
@@ -251,7 +264,7 @@ def main():
 	plt.subplot(2,1,1)
 	# print num_vms
 	# print [i for i in range(len(totalload))]
-	plt.plot([i for i in range(len(totalload))], num_vms, 'c*', markersize=7)
+	plt.plot([i for i in range(len(totalload_offline))], num_vms, 'c*', markersize=7)
 	# plt.plot(price_ratios[::20], , 'ro', markersize=7)
 	# plt.plot(price_ratios[::20], results[2][::20], 'g^', markersize=7)
 	# plt.plot(price_ratios[::200], results[3][::200], 'bs', markersize=7)
@@ -264,7 +277,7 @@ def main():
 	plt.ylabel('Number of VMs', fontsize=25)
 	# plt.ylabel('Revenue from User', fontsize=25)
 	plt.subplot(2,1,2)
-	plt.plot([i for i in range(len(totalload))], sc_load, 'ro', markersize=7)
+	plt.plot([i for i in range(len(totalload_offline))], sc_load, 'ro', markersize=7)
 	plt.ylabel('SC Load', fontsize=25)
 
 
