@@ -65,7 +65,15 @@ def sc_only(totalload, cfg):
 	return sc_load, sc_cost
 
 
+"""
+Offline algorithm for VM+SC
+rtype:
+- num_vms: Number of VMs for each time slot
+- sc_load: load on SC at each time slot
+- min_cost: Total VM+SC cost for the workload
+- sc_cost: 0
 
+"""
 def vm_sc_offline(totalload, cfg):
 	# TODO
 	workload = [load for load in totalload]
@@ -129,16 +137,28 @@ def vm_sc_offline(totalload, cfg):
 			# min_cost, optimal_num_vm =  min([(memo[(t,i,load)],i) for i in range(0, vm_possible+1)])
 			# return min_cost, optimal_num_vm
 	
-	min_cost, _ = dp(0, workload)
+	min_cost, optimal_vm = dp(0, workload)
 	# add number of VMs from Lemma
 	min_cost += alpha_v * sum(num_vms)
-	return num_vms, sc_load, min_cost, sc_cost # DO NOT USE THIS
+	return num_vms, sc_load, min_cost, optimal_vm, sc_cost # DO NOT USE THIS
 	# return num_vms, sc_load, vm_cost, sc_cost
 
 def vm_sc_online(totalload, cfg):
-	# TODO
-	return 0,0,0,0
-
+	remaining_load = [0 for val in totalload]
+	total_cost = 0
+	for index,load in enumerate(totalload):
+		print "Processing load : %d of %d" % (index, len(totalload))
+		load_to_process = [i + j for i,j in zip(remaining_load, load)]
+		num_vms,_,cost,optimal_vm,_ =  vm_sc_offline(load_to_process, cfg)
+		total_cost += cost  # DP cost
+		vms_instantiated = num_vms[0] + optimal_vm
+		remaining_load, load_to_process = remaining_load[1:], load_to_process[1:]
+		for i in range(cfg['vm']['window']):
+			if i < len(load_to_process):
+				remaining_load[i] = max(0,load_to_process[i] - (vms_instantiated * cfg['vm']['mu_v']))
+			else:
+				break
+	return total_cost
 
 
 #################################################    WORKLOAD GENERATOR     #################################################
@@ -247,13 +267,14 @@ def main():
 	sc_load, sc_cost = sc_only(totalload_offline, cfg)
 	# print totalload
 	print "Executing VM+SC (offline) case"
-	num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, sc_cost_hybrid = vm_sc_offline(totalload_offline, cfg)
+	# num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, _, sc_cost_hybrid = vm_sc_offline(totalload_offline, cfg)
 	print "Executing VM+SC (online) case"
-	on_num_vms_hybrid, on_sc_load_hybrid, on_vm_cost_hybrid, on_sc_cost_hybrid = vm_sc_online(totalload_offline, cfg)
+	# on_num_vms_hybrid, on_sc_load_hybrid, on_vm_cost_hybrid, _, on_sc_cost_hybrid = vm_sc_online(totalload_online, cfg)
+	on_total_cost = vm_sc_online(totalload_online, cfg)
 	print "Plotting results"
 	# TODO: plot the above data
 
-	results = "********** COST (Workload: %s) *********  SC only: %f\t VM only: %f\t VM+SC (offline): %f\t VM+SC (online): %f" % (workload_type, sc_cost, vm_cost, vm_cost_hybrid+sc_cost_hybrid, on_vm_cost_hybrid+on_sc_cost_hybrid)
+	results = "********** COST (Workload: %s) *********  SC only: %f\t VM only: %f\t VM+SC (offline): %f\t VM+SC (online): %f" % (workload_type, sc_cost, vm_cost, vm_cost_hybrid+sc_cost_hybrid, on_total_cost)
 	print results
 	filename = './graphs/' + workload_type + '.png'
 	fig = plt.figure()
