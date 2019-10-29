@@ -267,7 +267,7 @@ def main():
 	sc_load, sc_cost = sc_only(totalload_offline, cfg)
 	# print totalload
 	print "Executing VM+SC (offline) case"
-	# num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, _, sc_cost_hybrid = vm_sc_offline(totalload_offline, cfg)
+	num_vms_hybrid, sc_load_hybrid, vm_cost_hybrid, _, sc_cost_hybrid = vm_sc_offline(totalload_offline, cfg)
 	print "Executing VM+SC (online) case"
 	# on_num_vms_hybrid, on_sc_load_hybrid, on_vm_cost_hybrid, _, on_sc_cost_hybrid = vm_sc_online(totalload_online, cfg)
 	on_total_cost = vm_sc_online(totalload_online, cfg)
